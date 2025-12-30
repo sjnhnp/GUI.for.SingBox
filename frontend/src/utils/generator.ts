@@ -136,8 +136,13 @@ const generateOutbounds = async (outbounds: IOutbound[]) => {
             const sub = subscribesStore.getSubscribeById(subId)
             if (sub) {
               const subStr = await ReadFile(sub.path)
-              const proxies = JSON.parse(subStr)
-              SubscriptionCache[subId] = proxies
+              try {
+                const proxies = subStr ? JSON.parse(subStr) : []
+                SubscriptionCache[subId] = Array.isArray(proxies) ? proxies : []
+              } catch (e) {
+                console.error(`Failed to parse subscription ${sub.name}:`, e)
+                SubscriptionCache[subId] = []
+              }
             }
           }
           if (proxy.type === 'Subscription') {

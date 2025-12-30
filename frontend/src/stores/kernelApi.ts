@@ -84,7 +84,13 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
     if (!runtimeProfile) {
       const txt = await ReadFile(CoreConfigFilePath)
-      runtimeProfile = restoreProfile(JSON.parse(txt))
+      try {
+        const parsedConfig = txt ? JSON.parse(txt) : {}
+        runtimeProfile = restoreProfile(parsedConfig)
+      } catch (e) {
+        console.error('Failed to parse core config:', e)
+        runtimeProfile = restoreProfile({})
+      }
       const profile = profilesStore.currentProfile
       if (profile) {
         const _profile = deepClone(profile)
@@ -479,9 +485,9 @@ export const useKernelApiStore = defineStore('kernelApi', () => {
 
   const getProxyPort = ():
     | {
-        port: number
-        proxyType: ProxyType
-      }
+      port: number
+      proxyType: ProxyType
+    }
     | undefined => {
     const { port, 'socks-port': socksPort, 'mixed-port': mixedPort } = config.value
 
