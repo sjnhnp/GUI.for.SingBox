@@ -94,6 +94,10 @@ defineExpose({ modalSlots })
         ]"
       />
     </div>
+    <div v-if="!isManual" class="form-item">
+      {{ t('subscribe.useInternalPolicy') }}
+      <Switch v-model="sub.useInternalPolicy" />
+    </div>
     <div class="form-item">
       {{ t('subscribe.name') }} *
       <div class="min-w-[75%]">

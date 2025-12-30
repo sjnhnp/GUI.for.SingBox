@@ -395,6 +395,7 @@ export default {
     localPath: '本地路径',
     website: '官网',
     path: '保存路径',
+    useInternalPolicy: '使用订阅内的策略组和分流规则',
     include: '包括名称',
     exclude: '排除名称',
     includeProtocol: '包括协议',

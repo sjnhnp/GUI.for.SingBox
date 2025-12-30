@@ -183,6 +183,7 @@ export interface Subscription {
   proxyPrefix: string
   disabled: boolean
   inSecure: boolean
+  useInternalPolicy: boolean // 使用订阅内的策略组和分流规则
   proxies: { id: string; tag: string; type: string }[]
   requestMethod: RequestMethod
   requestTimeout: number
@@ -191,6 +192,8 @@ export interface Subscription {
     response: Recordable
   }
   script: string
+  // 使用订阅策略组时，存储关联的配置ID
+  profileId?: string
   // Not Config
   updating?: boolean
 }

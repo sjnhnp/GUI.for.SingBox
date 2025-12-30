@@ -6,7 +6,7 @@ import { ReadFile, WriteFile, Requests } from '@/bridge'
 import { DefaultSubscribeScript, SubscribesFilePath } from '@/constant/app'
 import { DefaultExcludeProtocols } from '@/constant/kernel'
 import { PluginTriggerEvent, RequestMethod } from '@/enums/app'
-import { usePluginsStore } from '@/stores'
+import { usePluginsStore, useProfilesStore } from '@/stores'
 import {
   sampleID,
   isValidSubJson,
@@ -18,6 +18,8 @@ import {
   asyncPool,
   eventBus,
   buildSmartRegExp,
+  restoreProfile,
+  extractProxiesFromConfig,
 } from '@/utils'
 
 import type { Subscription } from '@/types/app'
@@ -106,7 +108,7 @@ export const useSubscribesStore = defineStore('subscribes', () => {
       })
       Object.assign(h, s.header.response)
       if (h['Subscription-Userinfo']) {
-        ;(h['Subscription-Userinfo'] as string).split(/\s*;\s*/).forEach((part) => {
+        ; (h['Subscription-Userinfo'] as string).split(/\s*;\s*/).forEach((part) => {
           const [key, value] = part.split('=') as [string, string]
           userInfo[key] = parseInt(value) || 0
         })
@@ -114,6 +116,119 @@ export const useSubscribesStore = defineStore('subscribes', () => {
       body = b
     }
 
+    // 判断是否使用订阅内的策略组和分流规则
+    if (s.useInternalPolicy && isValidSubJson(body)) {
+      // 完整配置模式：提取策略组、规则等信息
+      const fullConfig = JSON.parse(body)
+      proxies = extractProxiesFromConfig(fullConfig)
+
+      const pluginStore = usePluginsStore()
+      const profilesStore = useProfilesStore()
+
+      // 通过插件处理代理节点（如节点转换）
+      proxies = await pluginStore.onSubscribeTrigger(proxies, s)
+
+      if (proxies.some((proxy) => proxy.name && !proxy.tag) || proxies[0]?.base64) {
+        throw 'You need to install the [节点转换] plugin first'
+      }
+
+      // 应用过滤规则
+      if (s.type !== 'Manual') {
+        const r1 = s.include && buildSmartRegExp(s.include)
+        const r2 = s.exclude && buildSmartRegExp(s.exclude)
+        const r3 = s.includeProtocol && buildSmartRegExp(s.includeProtocol)
+        const r4 = s.excludeProtocol && buildSmartRegExp(s.excludeProtocol)
+
+        proxies = proxies.filter((v) => {
+          const flag1 = r1 ? r1.test(v.tag) : true
+          const flag2 = r2 ? r2.test(v.tag) : false
+          const flag3 = r3 ? r3.test(v.type) : true
+          const flag4 = r4 ? r4.test(v.type) : false
+          return flag1 && !flag2 && flag3 && !flag4
+        })
+
+        if (s.proxyPrefix) {
+          proxies.forEach((v) => {
+            v.tag = v.tag.startsWith(s.proxyPrefix) ? v.tag : s.proxyPrefix + v.tag
+          })
+        }
+      }
+
+      // 创建或更新关联的 Profile
+      const profileId = s.profileId || sampleID()
+      const profileName = `[订阅] ${s.name}`
+
+      // 使用 restoreProfile 从完整配置恢复 Profile
+      const profile = restoreProfile(fullConfig, { id: profileId, name: profileName })
+
+      // 在策略组中添加对订阅代理的引用
+      const subscriptionRef = {
+        id: s.id,
+        type: 'Subscription',
+        tag: s.name,
+      }
+
+      // 为每个 selector/urltest 类型的出站添加订阅引用
+      profile.outbounds.forEach((outbound) => {
+        if (['selector', 'urltest'].includes(outbound.type)) {
+          // 检查原始配置中该出站是否引用了代理节点
+          const originalOutbound = fullConfig.outbounds?.find((o: any) => o.tag === outbound.tag)
+          if (originalOutbound?.outbounds) {
+            const hasProxyRefs = originalOutbound.outbounds.some((tag: string) => {
+              const target = fullConfig.outbounds?.find((o: any) => o.tag === tag)
+              return target && !['selector', 'urltest', 'direct', 'block', 'dns'].includes(target.type)
+            })
+            if (hasProxyRefs) {
+              // 添加订阅引用到出站
+              outbound.outbounds.push(subscriptionRef as IProxy)
+            }
+          }
+        }
+      })
+
+      // 检查 Profile 是否已存在
+      const existingProfile = profilesStore.getProfileById(profileId)
+      if (existingProfile) {
+        await profilesStore.editProfile(profileId, profile)
+      } else {
+        await profilesStore.addProfile(profile)
+      }
+
+      // 更新订阅信息
+      s.profileId = profileId
+      s.upload = userInfo.upload ?? 0
+      s.download = userInfo.download ?? 0
+      s.total = userInfo.total ?? 0
+      s.expire = userInfo.expire ? userInfo.expire * 1000 : 0
+      s.updateTime = Date.now()
+      s.proxies = proxies.map(({ tag, type }) => {
+        const id = s.proxies.find((v) => v.tag === tag)?.id || sampleID()
+        return { id, tag, type }
+      })
+
+      // 执行订阅脚本
+      const fn = new window.AsyncFunction(
+        'proxies',
+        'subscription',
+        `${s.script}; return await ${PluginTriggerEvent.OnSubscribe}(proxies, subscription)`,
+      ) as (
+        proxies: Recordable[],
+        subscription: Subscription,
+      ) => Promise<{ proxies: Recordable[]; subscription: Subscription }>
+
+      const { proxies: _proxies, subscription } = await fn(proxies, s)
+
+      Object.assign(s, subscription)
+      s.proxies = _proxies.map(({ tag, type }) => {
+        const id = s.proxies.find((v) => v.tag === tag)?.id || sampleID()
+        return { id, tag, type }
+      })
+
+      await WriteFile(s.path, JSON.stringify(_proxies, null, 2))
+      return
+    }
+
+    // 原有逻辑：仅提取代理节点
     if (isValidSubJson(body)) {
       proxies = JSON.parse(body).outbounds
     } else if (isValidSubYAML(body)) {
@@ -261,6 +376,7 @@ export const useSubscribesStore = defineStore('subscribes', () => {
       proxyPrefix: '',
       disabled: false,
       inSecure: false,
+      useInternalPolicy: false,
       requestMethod: RequestMethod.Get,
       requestTimeout: 15,
       header: {

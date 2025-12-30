@@ -396,6 +396,7 @@ export default {
     localPath: 'Local Path',
     website: 'Website',
     path: 'Save Path',
+    useInternalPolicy: 'Use subscription policy groups and rules',
     include: 'Include Keywords',
     exclude: 'Exclude Keywords',
     includeProtocol: 'Include Protocol',
