@@ -57,6 +57,7 @@ const componentList = [
   'Select',
   'MultipleSelect',
   'Switch',
+  'ColorPicker',
 ] as const
 
 type ComponentType = (typeof componentList)[number]
@@ -128,6 +129,10 @@ const onComponentChange = (component: ComponentType, index: number) => {
     case 'Radio':
     case 'Select': {
       plugin.value.configuration[index]!.value = ''
+      break
+    }
+    case 'ColorPicker': {
+      plugin.value.configuration[index]!.value = '#000000'
       break
     }
     case 'KeyValueEditor': {
@@ -203,20 +208,8 @@ defineExpose({ modalSlots })
       />
     </div>
     <div class="form-item">
-      {{ t('plugin.install') }}
-      <Switch v-model="plugin.install" />
-    </div>
-    <div class="form-item">
       <div class="mr-8">{{ t('plugin.trigger') }}</div>
-      <CheckBox v-model="plugin.triggers" :options="PluginsTriggerOptions.slice(0, 3)" />
-    </div>
-    <div class="form-item">
-      <div class="name"></div>
-      <CheckBox v-model="plugin.triggers" :options="PluginsTriggerOptions.slice(3, 7)" />
-    </div>
-    <div class="form-item">
-      <div class="name"></div>
-      <CheckBox v-model="plugin.triggers" :options="PluginsTriggerOptions.slice(7)" />
+      <MultipleSelect v-model="plugin.triggers" :options="PluginsTriggerOptions" clearable />
     </div>
     <div class="form-item">
       {{ t('plugin.name') }} *
@@ -257,11 +250,15 @@ defineExpose({ modalSlots })
       </div>
     </div>
     <Divider>
-      <Button @click="toggleShowMore" type="text" size="small">
+      <Button type="text" size="small" @click="toggleShowMore">
         {{ t('common.more') }}
       </Button>
     </Divider>
     <div v-show="showMore" class="pb-8">
+      <div class="form-item">
+        {{ t('plugin.install') }}
+        <Switch v-model="plugin.install" />
+      </div>
       <div class="form-item">
         {{ t('plugin.hasUI') }}
         <Switch v-model="plugin.hasUI" />
@@ -305,7 +302,7 @@ defineExpose({ modalSlots })
               <div class="ml-8">{{ index + 1 }}.</div>
             </template>
             <template #extra>
-              <Button @click="handleDelParam(index)" size="small" type="text">
+              <Button size="small" type="text" @click="handleDelParam(index)">
                 {{ t('common.delete') }}
               </Button>
             </template>
@@ -350,7 +347,7 @@ defineExpose({ modalSlots })
           </Card>
           <Card v-else :title="t('plugin.selectComponent')">
             <template #extra>
-              <Button @click="handleDelParam(index)" size="small" type="text">
+              <Button size="small" type="text" @click="handleDelParam(index)">
                 {{ t('common.delete') }}
               </Button>
             </template>
@@ -368,7 +365,7 @@ defineExpose({ modalSlots })
       </div>
 
       <div :class="plugin.configuration.length !== 0 ? 'mt-8' : ''" class="mx-8">
-        <Button @click="handleAddParam" type="primary" icon="add" class="w-full" />
+        <Button type="primary" icon="add" class="w-full" @click="handleAddParam" />
       </div>
     </div>
   </div>
